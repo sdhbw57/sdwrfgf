@@ -16,6 +16,7 @@ const { db } = require('./db');
 const authRoutes = require('./routes/auth');
 const adminApiRoutes = require('./routes/adminApi');
 const apiV1Routes = require('./routes/apiV1');
+const dashboardRoutes = require('./routes/dashboard');
 
 // Import services and utils (ensure proxyPool is imported to trigger its initialization)
 require('./services/geminiProxyService'); // Still need to import this for other initializations if any
@@ -77,7 +78,8 @@ app.use('/admin', requireAdminAuth, express.static(path.join(__dirname, '..', 'p
 // --- API Routes ---
 app.use('/api', authRoutes); 
 app.use('/api/admin', requireAdminAuth, adminApiRoutes); 
-app.use('/v1', apiV1Routes); 
+app.use('/v1', apiV1Routes);
+app.use('/dashboard', dashboardRoutes);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {

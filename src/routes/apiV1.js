@@ -6,6 +6,7 @@ const requireWorkerAuth = require('../middleware/workerAuth');
 const geminiProxyService = require('../services/geminiProxyService');
 const configService = require('../services/configService'); // For /v1/models
 const transformUtils = require('../utils/transform');
+const metricsService = require('../services/metricsService'); // Import metrics service
 
 // Import vertexProxyService, which now includes manual loading logic
 const vertexProxyService = require('../services/vertexProxyService');
@@ -14,6 +15,13 @@ const router = express.Router();
 
 // Apply worker authentication middleware to all /v1 routes
 router.use(requireWorkerAuth);
+
+// Middleware to track API requests
+router.use(async (req, res, next) => {
+    // Increment total requests count
+    await metricsService.incrementTotalRequests();
+    next();
+});
 
 // --- /v1/models ---
 router.get('/models', async (req, res, next) => {
@@ -88,6 +96,9 @@ router.post('/chat/completions', async (req, res, next) => {
     const requestedModelId = openAIRequestBody?.model; // Keep track for transformations
     
     try {
+        // Record start time for response time tracking
+        const startTime = Date.now();
+        
         // Check if this is a non-thinking model request
         const isNonThinking = requestedModelId?.endsWith(':non-thinking');
         // Remove the suffix for actual model lookup, but keep original for response
@@ -122,8 +133,25 @@ router.post('/chat/completions', async (req, res, next) => {
             );
         }
 
+        // Calculate response time
+        const responseTime = Date.now() - startTime;
+
         // Check if the service returned an error
         if (result.error) {
+            // Record error metrics with token data (if any)
+            await metricsService.recordApiRequest({
+                model: requestedModelId,
+                inputTokens: result.inputTokens || 0,
+                outputTokens: 0,
+                errorType: result.error?.type || 'unknown_error',
+                responseTime
+            });
+            
+            // Track copyright errors
+            if (result.error.message && result.error.message.toLowerCase().includes('copyright')) {
+                await metricsService.incrementCopyrightErrors();
+            }
+            
             // Ensure Content-Type is set for error responses
             res.setHeader('Content-Type', 'application/json');
             return res.status(result.status || 500).json({ error: result.error });
@@ -133,6 +161,25 @@ router.post('/chat/completions', async (req, res, next) => {
         // For KEEPALIVE, `result.response` might be undefined initially if we change it,
         // but `result.getResponsePromise` will exist.
         const { response: geminiResponse, selectedKeyId, modelCategory, getResponsePromise } = result;
+
+        // Record successful request metrics
+        if (!stream) {
+            // For non-streaming requests we can extract usage information directly
+            const usage = geminiResponse?.usage || {};
+            await metricsService.recordApiRequest({
+                model: requestedModelId,
+                inputTokens: usage.prompt_tokens || 0,
+                outputTokens: usage.completion_tokens || 0,
+                responseTime
+            });
+        } else {
+            // For streaming requests, record basic metrics without token information
+            // We'll update this in future versions to track tokens for streaming requests
+            await metricsService.recordApiRequest({
+                model: requestedModelId,
+                responseTime
+            });
+        }
 
         // --- Handle Response ---
 

@@ -128,6 +128,25 @@ const createTablesSQL = `
     value TEXT                           -- Can store JSON strings or simple values
   );
 
+  CREATE TABLE IF NOT EXISTS api_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    total_requests INTEGER DEFAULT 0,
+    copyright_errors INTEGER DEFAULT 0,
+    uptime_start TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS api_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    model TEXT,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    error_type TEXT,
+    response_time INTEGER -- in milliseconds
+  );
+
   -- Initialize default category quotas if not present
   INSERT OR IGNORE INTO settings (key, value) VALUES
     ('category_quotas', '{"proQuota": 50, "flashQuota": 1500}');
@@ -143,6 +162,10 @@ const createTablesSQL = `
   -- Add other default settings as needed, e.g., last used key ID
   INSERT OR IGNORE INTO settings (key, value) VALUES
     ('last_used_gemini_key_id', '');
+    
+  -- Initialize uptime tracking (for server start time)
+  INSERT OR IGNORE INTO api_metrics (date, total_requests, copyright_errors, uptime_start) 
+  VALUES (date('now'), 0, 0, datetime('now'));
 `;
 
 // Function to initialize the database schema
